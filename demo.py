@@ -86,7 +86,7 @@ def parse_args():
     parser.add_argument(
         "--port",
         type=int,
-        default=7860,
+        default=8080,
         help="port for the point cloud viewer",
     )
     parser.add_argument(

@@ -310,6 +310,19 @@ class ARCroco3DStereo(CroCoNet):
             **self.croco_args,
         )
         self.set_freeze(config.freeze)
+        # Beta net may be created lazily if model_update_type is switched after loading
+        self.beta_net = None
+
+    def _ensure_beta_net(self, device=None):
+        if self.beta_net is None:
+            hidden_dim = self.dec_embed_dim
+            self.beta_net = nn.Sequential(
+                nn.Linear(self.dec_embed_dim * 2, hidden_dim),
+                nn.ReLU(inplace=True),
+                nn.Linear(hidden_dim, 1),
+            )
+        if device is not None:
+            self.beta_net.to(device)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, **kw):
@@ -820,8 +833,27 @@ class ARCroco3DStereo(CroCoNet):
         else:
             update_mask = img_mask
         update_mask = update_mask[:, None, None].float()
-        state_feat = new_state_feat * update_mask + state_feat * (
-            1 - update_mask
+        # update with learning rate (supports meta_beta)
+        if i == 0:
+            update_mask1 = update_mask
+        else:
+            mut = getattr(self.config, "model_update_type", "cut3r")
+            if mut == "cut3r":
+                update_mask1 = update_mask
+            elif mut == "ttt3r":
+                # Default decoder step path has no attention stats; fall back to plain mask
+                update_mask1 = update_mask
+            elif mut == "meta_beta":
+                # Per-token beta from state and proposed new state
+                self._ensure_beta_net(state_feat.device)
+                beta = torch.sigmoid(
+                    self.beta_net(torch.cat([state_feat, new_state_feat], dim=-1))
+                )  # [B, Nstate, 1]
+                update_mask1 = update_mask * beta
+            else:
+                raise ValueError(f"Invalid model type: {self.config.model_update_type}")
+        state_feat = new_state_feat * update_mask1 + state_feat * (
+            1 - update_mask1
         )  # update global state
         mem = new_mem * update_mask + mem * (1 - update_mask)  # then update local state
         reset_mask = views[i]["reset"]
@@ -904,6 +936,12 @@ class ARCroco3DStereo(CroCoNet):
                     cross_attn_state = rearrange(torch.cat(cross_attn_state, dim=0), 'l h nstate nimg -> 1 nstate nimg (l h)') # [12, 16, 768, 1 + 576] -> [1, 768, 1 + 576, 12*16]
                     state_query_img_key = cross_attn_state.mean(dim=(-1, -2))
                     update_mask1 = update_mask * torch.sigmoid(state_query_img_key)[..., None] * 1.0
+                elif self.config.model_update_type == "meta_beta":
+                    self._ensure_beta_net(state_feat.device)
+                    beta = torch.sigmoid(
+                        self.beta_net(torch.cat([state_feat, new_state_feat], dim=-1))
+                    )  # [B, Nstate, 1]
+                    update_mask1 = update_mask * beta
                 else:
                     raise ValueError(f"Invalid model type: {self.config.model_update_type}")
 
@@ -1120,8 +1158,18 @@ class ARCroco3DStereo(CroCoNet):
             else:
                 update_mask = img_mask
             update_mask = update_mask[:, None, None].float()
-            state_feat = new_state_feat * update_mask + state_feat * (
-                1 - update_mask
+            # update with learning rate (supports meta_beta)
+            mut = getattr(self.config, "model_update_type", "cut3r")
+            if mut == "meta_beta" and i > 0:
+                self._ensure_beta_net(state_feat.device)
+                beta = torch.sigmoid(
+                    self.beta_net(torch.cat([state_feat, new_state_feat], dim=-1))
+                )  # [B, Nstate, 1]
+                update_mask1 = update_mask * beta
+            else:
+                update_mask1 = update_mask
+            state_feat = new_state_feat * update_mask1 + state_feat * (
+                1 - update_mask1
             )  # update global state
             mem = new_mem * update_mask + mem * (
                 1 - update_mask
@@ -1274,6 +1322,12 @@ class ARCroco3DStereo(CroCoNet):
                     cross_attn_state = rearrange(torch.cat(cross_attn_state, dim=0), 'l h nstate nimg -> 1 nstate nimg (l h)') # [12, 16, 768, 1 + 576] -> [1, 768, 1 + 576, 12*16]
                     state_query_img_key = cross_attn_state.mean(dim=(-1, -2))
                     update_mask1 = update_mask * torch.sigmoid(state_query_img_key)[..., None] * 1.0
+                elif self.config.model_update_type == "meta_beta":
+                    self._ensure_beta_net(state_feat.device)
+                    beta = torch.sigmoid(
+                        self.beta_net(torch.cat([state_feat, new_state_feat], dim=-1))
+                    )  # [B, Nstate, 1]
+                    update_mask1 = update_mask * beta
                 else:
                     raise ValueError(f"Invalid model type: {self.config.model_update_type}")
 
