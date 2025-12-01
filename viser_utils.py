@@ -339,6 +339,10 @@ class PointCloudViewer:
         vis_threshold=1,
         size=512,
         downsample_factor=10,
+        init_cam_wxyz=None,
+        init_cam_pos=None,
+        init_cam_fov_deg=None,
+        init_cam_aspect=None,
     ):
         self.model = model
         self.size=size
@@ -361,6 +365,11 @@ class PointCloudViewer:
         self.traj_list = []
         self.orig_img_list = [x[0] for x in color_list]
         self.via_points = []
+        # Optional initial camera parameters
+        self.init_cam_wxyz = init_cam_wxyz
+        self.init_cam_pos = init_cam_pos
+        self.init_cam_fov_deg = init_cam_fov_deg
+        self.init_cam_aspect = init_cam_aspect
 
         gui_reset_up = self.server.gui.add_button(
             "Reset up direction",
@@ -636,6 +645,18 @@ class PointCloudViewer:
     def _connect_client(self, client: viser.ClientHandle):
         from src.dust3r.inference import inference_step
         from src.dust3r.utils.geometry import geotrf
+        # Apply initial camera if provided
+        try:
+            if self.init_cam_wxyz is not None:
+                client.camera.wxyz = np.array(self.init_cam_wxyz, dtype=float)
+            if self.init_cam_pos is not None:
+                client.camera.position = np.array(self.init_cam_pos, dtype=float)
+            if self.init_cam_fov_deg is not None:
+                client.camera.fov = float(self.init_cam_fov_deg) * np.pi / 180.0
+            if self.init_cam_aspect is not None:
+                client.camera.aspect = float(self.init_cam_aspect)
+        except Exception:
+            pass
 
         wxyz_panel = client.gui.add_text("wxyz:", f"{client.camera.wxyz}")
         position_panel = client.gui.add_text("position:", f"{client.camera.position}")

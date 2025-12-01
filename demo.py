@@ -113,6 +113,32 @@ def parse_args():
         default=1,
         help="Downsample factor for the point cloud viewer",
     )
+    parser.add_argument(
+        "--init_cam_wxyz",
+        nargs=4,
+        type=float,
+        default=None,
+        help="Initial viewer camera orientation as quaternion (w x y z).",
+    )
+    parser.add_argument(
+        "--init_cam_pos",
+        nargs=3,
+        type=float,
+        default=None,
+        help="Initial viewer camera position (x y z).",
+    )
+    parser.add_argument(
+        "--init_cam_fov_deg",
+        type=float,
+        default=None,
+        help="Initial viewer camera vertical field of view in degrees.",
+    )
+    parser.add_argument(
+        "--init_cam_aspect",
+        type=float,
+        default=None,
+        help="Initial viewer camera aspect ratio (W/H).",
+    )
     return parser.parse_args()
 
 
@@ -504,7 +530,11 @@ def run_inference(args):
         vis_threshold=args.vis_threshold,
         size = args.size,
         port = args.port,
-        downsample_factor=args.downsample_factor
+        downsample_factor=args.downsample_factor,
+        init_cam_wxyz=args.init_cam_wxyz,
+        init_cam_pos=args.init_cam_pos,
+        init_cam_fov_deg=args.init_cam_fov_deg,
+        init_cam_aspect=args.init_cam_aspect,
     )
     viewer.run()
 
